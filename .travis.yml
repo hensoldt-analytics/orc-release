@@ -7,6 +7,9 @@ matrix:
   include:
   - compiler: gcc
     os: linux
+    script:
+    - cmake -DANALYZE_JAVA=ON ..
+    - make package test-out
   - compiler: clang
     os: linux
     addons:
