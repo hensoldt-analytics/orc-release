@@ -265,7 +265,6 @@ public class RecordReaderImpl implements RecordReader {
       this.dataReader = RecordReaderUtils.createDefaultDataReader(
           builder.build());
     }
-    this.dataReader.open();
     firstRow = skippedRows;
     totalRowCount = rows;
     Boolean skipCorrupt = options.getSkipCorruptRecords();
