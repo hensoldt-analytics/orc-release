@@ -251,7 +251,7 @@ public class RecordReaderImpl implements RecordReader {
           DataReaderProperties.builder()
               .withBufferSize(bufferSize)
               .withCompression(fileReader.compressionKind)
-              .withFileSystem(fileReader.fileSystem)
+              .withFileSystem(fileReader.getFileSystem())
               .withPath(fileReader.path)
               .withTypeCount(types.size())
               .withMaxDiskRangeChunkLimit(maxDiskRangeChunkLimit)
