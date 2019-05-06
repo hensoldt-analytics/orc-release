@@ -30,6 +30,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.TimeZone;
 
+import org.apache.hadoop.fs.FSDataInputStream;
 import org.apache.orc.OrcFile;
 import org.apache.orc.util.BloomFilter;
 import org.apache.orc.util.BloomFilterIO;
@@ -240,16 +241,21 @@ public class RecordReaderImpl implements RecordReader {
     if (options.getDataReader() != null) {
       this.dataReader = options.getDataReader().clone();
     } else {
-      this.dataReader = RecordReaderUtils.createDefaultDataReader(
+      DataReaderProperties.Builder builder =
           DataReaderProperties.builder()
               .withBufferSize(bufferSize)
               .withCompression(fileReader.compressionKind)
               .withFileSystem(fileReader.getFileSystem())
               .withPath(fileReader.path)
               .withTypeCount(types.size())
-              .withZeroCopy(zeroCopy)
               .withMaxDiskRangeChunkLimit(maxDiskRangeChunkLimit)
-              .build());
+              .withZeroCopy(zeroCopy);
+      FSDataInputStream file = fileReader.takeFile();
+      if (file != null) {
+        builder.withFile(file);
+      }
+      this.dataReader = RecordReaderUtils.createDefaultDataReader(
+          builder.build());
     }
     this.dataReader.open();
     firstRow = skippedRows;
