@@ -330,7 +330,7 @@ public class TestSchemaEvolution {
 
   @Test
   public void testFloatToDoubleEvolution() throws Exception {
-    testFilePath = new Path(workDir, "TestOrcFile." +
+    testFilePath = new Path(workDir, "TestSchemaEvolution." +
         testCaseName.getMethodName() + ".orc");
     TypeDescription schema = TypeDescription.createFloat();
     Writer writer = OrcFile.createWriter(testFilePath,
@@ -351,13 +351,13 @@ public class TestSchemaEvolution {
     RecordReader rows = reader.rows(reader.options().schema(schemaOnRead));
     batch = schemaOnRead.createRowBatch();
     rows.nextBatch(batch);
-    assertEquals(74.72, ((DoubleColumnVector) batch.cols[0]).vector[0], 0.00000000001);
+    assertEquals(74.72, ((DoubleColumnVector) batch.cols[0]).vector[0], 0.00001);
     rows.close();
   }
 
   @Test
   public void testFloatToDecimalEvolution() throws Exception {
-    testFilePath = new Path(workDir, "TestOrcFile." +
+    testFilePath = new Path(workDir, "TestSchemaEvolution." +
       testCaseName.getMethodName() + ".orc");
     TypeDescription schema = TypeDescription.createFloat();
     Writer writer = OrcFile.createWriter(testFilePath,
@@ -384,7 +384,7 @@ public class TestSchemaEvolution {
 
   @Test
   public void testFloatToDecimal64Evolution() throws Exception {
-    testFilePath = new Path(workDir, "TestOrcFile." +
+    testFilePath = new Path(workDir, "TestSchemaEvolution." +
       testCaseName.getMethodName() + ".orc");
     TypeDescription schema = TypeDescription.createFloat();
     Writer writer = OrcFile.createWriter(testFilePath,
@@ -411,7 +411,7 @@ public class TestSchemaEvolution {
 
   @Test
   public void testDoubleToDecimalEvolution() throws Exception {
-    testFilePath = new Path(workDir, "TestOrcFile." +
+    testFilePath = new Path(workDir, "TestSchemaEvolution." +
       testCaseName.getMethodName() + ".orc");
     TypeDescription schema = TypeDescription.createDouble();
     Writer writer = OrcFile.createWriter(testFilePath,
@@ -438,7 +438,7 @@ public class TestSchemaEvolution {
 
   @Test
   public void testDoubleToDecimal64Evolution() throws Exception {
-    testFilePath = new Path(workDir, "TestOrcFile." +
+    testFilePath = new Path(workDir, "TestSchemaEvolution." +
       testCaseName.getMethodName() + ".orc");
     TypeDescription schema = TypeDescription.createDouble();
     Writer writer = OrcFile.createWriter(testFilePath,
@@ -465,7 +465,7 @@ public class TestSchemaEvolution {
 
   @Test
   public void testLongToDecimalEvolution() throws Exception {
-    testFilePath = new Path(workDir, "TestOrcFile." +
+    testFilePath = new Path(workDir, "TestSchemaEvolution." +
       testCaseName.getMethodName() + ".orc");
     TypeDescription schema = TypeDescription.createLong();
     Writer writer = OrcFile.createWriter(testFilePath,
@@ -492,7 +492,7 @@ public class TestSchemaEvolution {
 
   @Test
   public void testLongToDecimal64Evolution() throws Exception {
-    testFilePath = new Path(workDir, "TestOrcFile." +
+    testFilePath = new Path(workDir, "TestSchemaEvolution." +
       testCaseName.getMethodName() + ".orc");
     TypeDescription schema = TypeDescription.createLong();
     Writer writer = OrcFile.createWriter(testFilePath,
@@ -519,7 +519,7 @@ public class TestSchemaEvolution {
 
   @Test
   public void testDecimalToDecimalEvolution() throws Exception {
-    testFilePath = new Path(workDir, "TestOrcFile." +
+    testFilePath = new Path(workDir, "TestSchemaEvolution." +
       testCaseName.getMethodName() + ".orc");
     TypeDescription schema = TypeDescription.createDecimal().withPrecision(38).withScale(0);
     Writer writer = OrcFile.createWriter(testFilePath,
@@ -546,7 +546,7 @@ public class TestSchemaEvolution {
 
   @Test
   public void testDecimalToDecimal64Evolution() throws Exception {
-    testFilePath = new Path(workDir, "TestOrcFile." +
+    testFilePath = new Path(workDir, "TestSchemaEvolution." +
       testCaseName.getMethodName() + ".orc");
     TypeDescription schema = TypeDescription.createDecimal().withPrecision(38).withScale(2);
     Writer writer = OrcFile.createWriter(testFilePath,
@@ -573,7 +573,7 @@ public class TestSchemaEvolution {
 
   @Test
   public void testStringToDecimalEvolution() throws Exception {
-    testFilePath = new Path(workDir, "TestOrcFile." +
+    testFilePath = new Path(workDir, "TestSchemaEvolution." +
       testCaseName.getMethodName() + ".orc");
     TypeDescription schema = TypeDescription.createString();
     Writer writer = OrcFile.createWriter(testFilePath,
@@ -601,7 +601,7 @@ public class TestSchemaEvolution {
 
   @Test
   public void testStringToDecimal64Evolution() throws Exception {
-    testFilePath = new Path(workDir, "TestOrcFile." +
+    testFilePath = new Path(workDir, "TestSchemaEvolution." +
       testCaseName.getMethodName() + ".orc");
     TypeDescription schema = TypeDescription.createString();
     Writer writer = OrcFile.createWriter(testFilePath,
@@ -629,7 +629,7 @@ public class TestSchemaEvolution {
 
   @Test
   public void testTimestampToDecimalEvolution() throws Exception {
-    testFilePath = new Path(workDir, "TestOrcFile." +
+    testFilePath = new Path(workDir, "TestSchemaEvolution." +
       testCaseName.getMethodName() + ".orc");
     TypeDescription schema = TypeDescription.createTimestamp();
     Writer writer = OrcFile.createWriter(testFilePath,
@@ -656,7 +656,7 @@ public class TestSchemaEvolution {
 
   @Test
   public void testTimestampToDecimal64Evolution() throws Exception {
-    testFilePath = new Path(workDir, "TestOrcFile." +
+    testFilePath = new Path(workDir, "TestSchemaEvolution." +
       testCaseName.getMethodName() + ".orc");
     TypeDescription schema = TypeDescription.createTimestamp();
     Writer writer = OrcFile.createWriter(testFilePath,
