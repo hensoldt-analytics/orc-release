@@ -1,4 +1,4 @@
-/**
+/*
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -61,10 +61,11 @@ public class ConvertTreeReaderFactory extends TreeReaderFactory {
    */
   public static class ConvertTreeReader extends TreeReader {
 
-    protected TreeReader convertTreeReader;
+    TreeReader fromReader;
 
-    ConvertTreeReader(int columnId) throws IOException {
+    ConvertTreeReader(int columnId, TreeReader fromReader) throws IOException {
       super(columnId, null);
+      this.fromReader = fromReader;
     }
 
     // The ordering of types here is used to determine which numeric types
@@ -89,11 +90,7 @@ public class ConvertTreeReaderFactory extends TreeReaderFactory {
       numericTypes.put(kind, level);
     }
 
-    protected void setConvertTreeReader(TreeReader convertTreeReader) {
-      this.convertTreeReader = convertTreeReader;
-    }
-
-    protected TreeReader getStringGroupTreeReader(int columnId,
+    static TreeReader getStringGroupTreeReader(int columnId,
         TypeDescription fileType, Context context) throws IOException {
       switch (fileType.getCategory()) {
       case STRING:
@@ -255,33 +252,33 @@ public class ConvertTreeReaderFactory extends TreeReaderFactory {
     @Override
     void checkEncoding(OrcProto.ColumnEncoding encoding) throws IOException {
       // Pass-thru.
-      convertTreeReader.checkEncoding(encoding);
+      fromReader.checkEncoding(encoding);
     }
 
     @Override
     void startStripe(Map<StreamName, InStream> streams,
-        OrcProto.StripeFooter stripeFooter
+                     OrcProto.StripeFooter stripeFooter
     ) throws IOException {
       // Pass-thru.
-      convertTreeReader.startStripe(streams, stripeFooter);
+      fromReader.startStripe(streams, stripeFooter);
     }
 
     @Override
     public void seek(PositionProvider[] index) throws IOException {
      // Pass-thru.
-      convertTreeReader.seek(index);
+      fromReader.seek(index);
     }
 
     @Override
     public void seek(PositionProvider index) throws IOException {
       // Pass-thru.
-      convertTreeReader.seek(index);
+      fromReader.seek(index);
     }
 
     @Override
     void skipRows(long items) throws IOException {
       // Pass-thru.
-      convertTreeReader.skipRows(items);
+      fromReader.skipRows(items);
     }
 
     /**
@@ -373,66 +370,33 @@ public class ConvertTreeReaderFactory extends TreeReaderFactory {
     }
   }
 
-  public static class AnyIntegerTreeReader extends ConvertTreeReader {
-
-    private TypeDescription.Category fileTypeCategory;
-    private TreeReader anyIntegerTreeReader;
-
-    AnyIntegerTreeReader(int columnId, TypeDescription fileType,
-        Context context) throws IOException {
-      super(columnId);
-      this.fileTypeCategory = fileType.getCategory();
-      switch (fileTypeCategory) {
-      case BOOLEAN:
-        anyIntegerTreeReader = new BooleanTreeReader(columnId);
-        break;
-      case BYTE:
-        anyIntegerTreeReader = new ByteTreeReader(columnId);
-        break;
-      case SHORT:
-        anyIntegerTreeReader = new ShortTreeReader(columnId, context);
-        break;
-      case INT:
-        anyIntegerTreeReader = new IntTreeReader(columnId, context);
-        break;
-      case LONG:
-        anyIntegerTreeReader = new LongTreeReader(columnId, context);
-        break;
-      default:
-        throw new RuntimeException("Unexpected type kind " + fileType.getCategory().name());
-      }
-      setConvertTreeReader(anyIntegerTreeReader);
-    }
-
-    protected String getString(long longValue) {
-      if (fileTypeCategory == TypeDescription.Category.BOOLEAN) {
-        return longValue == 0 ? "FALSE" : "TRUE";
-      } else {
-        return Long.toString(longValue);
-      }
-    }
-
-    @Override
-    public void nextVector(ColumnVector previousVector,
-                           boolean[] isNull,
-                           final int batchSize) throws IOException {
-      anyIntegerTreeReader.nextVector(previousVector, isNull, batchSize);
+  private static TreeReader createFromInteger(int columnId,
+                                              TypeDescription fileType,
+                                              Context context) throws IOException {
+    switch (fileType.getCategory()) {
+    case BOOLEAN:
+      return new BooleanTreeReader(columnId);
+    case BYTE:
+      return new ByteTreeReader(columnId);
+    case SHORT:
+      return new ShortTreeReader(columnId, context);
+    case INT:
+      return new IntTreeReader(columnId, context);
+    case LONG:
+      return new LongTreeReader(columnId, context);
+    default:
+      throw new RuntimeException("Unexpected type kind " + fileType);
     }
   }
 
   public static class AnyIntegerFromAnyIntegerTreeReader extends ConvertTreeReader {
-
-    private AnyIntegerTreeReader anyIntegerAsLongTreeReader;
-
     private final TypeDescription readerType;
     private final boolean downCastNeeded;
 
     AnyIntegerFromAnyIntegerTreeReader(int columnId, TypeDescription fileType, TypeDescription readerType,
       Context context) throws IOException {
-      super(columnId);
+      super(columnId, createFromInteger(columnId, fileType, context));
       this.readerType = readerType;
-      anyIntegerAsLongTreeReader = new AnyIntegerTreeReader(columnId, fileType, context);
-      setConvertTreeReader(anyIntegerAsLongTreeReader);
       downCastNeeded = integerDownCastNeeded(fileType, readerType);
     }
 
@@ -440,14 +404,12 @@ public class ConvertTreeReaderFactory extends TreeReaderFactory {
     public void nextVector(ColumnVector previousVector,
                            boolean[] isNull,
                            final int batchSize) throws IOException {
-      anyIntegerAsLongTreeReader.nextVector(previousVector, isNull, batchSize);
+      fromReader.nextVector(previousVector, isNull, batchSize);
       LongColumnVector resultColVector = (LongColumnVector) previousVector;
       if (downCastNeeded) {
         if (resultColVector.isRepeating) {
           if (resultColVector.noNulls || !resultColVector.isNull[0]) {
             downCastAnyInteger(resultColVector, 0, readerType);
-          } else {
-            // Result remains null.
           }
         } else if (resultColVector.noNulls){
           for (int i = 0; i < batchSize; i++) {
@@ -457,8 +419,6 @@ public class ConvertTreeReaderFactory extends TreeReaderFactory {
           for (int i = 0; i < batchSize; i++) {
             if (!resultColVector.isNull[i]) {
               downCastAnyInteger(resultColVector, i, readerType);
-            } else {
-              // Result remains null.
             }
           }
         }
@@ -467,17 +427,18 @@ public class ConvertTreeReaderFactory extends TreeReaderFactory {
   }
 
   public static class AnyIntegerFromDoubleTreeReader extends ConvertTreeReader {
-
     private final TypeDescription readerType;
     private DoubleColumnVector doubleColVector;
     private LongColumnVector longColVector;
 
-    AnyIntegerFromDoubleTreeReader(int columnId, TypeDescription readerType,
+    AnyIntegerFromDoubleTreeReader(int columnId, TypeDescription fileType,
+                                   TypeDescription readerType,
                                    TreeReader fromReader)
         throws IOException {
-      super(columnId);
+      super(columnId, fileType.getCategory() == Category.DOUBLE ?
+                          new DoubleTreeReader(columnId) :
+                          new FloatTreeReader(columnId));
       this.readerType = readerType;
-      setConvertTreeReader(fromReader);
     }
 
     @Override
@@ -501,16 +462,13 @@ public class ConvertTreeReaderFactory extends TreeReaderFactory {
         longColVector = (LongColumnVector) previousVector;
       }
       // Read present/isNull stream
-      convertTreeReader.nextVector(doubleColVector, isNull, batchSize);
+      fromReader.nextVector(doubleColVector, isNull, batchSize);
 
       convertVector(doubleColVector, longColVector, batchSize);
     }
   }
 
   public static class AnyIntegerFromDecimalTreeReader extends ConvertTreeReader {
-
-    private DecimalTreeReader decimalTreeReader;
-
     private final int precision;
     private final int scale;
     private final TypeDescription readerType;
@@ -519,12 +477,11 @@ public class ConvertTreeReaderFactory extends TreeReaderFactory {
 
     AnyIntegerFromDecimalTreeReader(int columnId, TypeDescription fileType,
         TypeDescription readerType, Context context) throws IOException {
-      super(columnId);
+      super(columnId, new DecimalTreeReader(columnId, fileType.getPrecision(),
+          fileType.getScale(), context));
       this.precision = fileType.getPrecision();
       this.scale = fileType.getScale();
       this.readerType = readerType;
-      decimalTreeReader = new DecimalTreeReader(columnId, precision, scale, context);
-      setConvertTreeReader(decimalTreeReader);
     }
 
     @Override
@@ -589,26 +546,21 @@ public class ConvertTreeReaderFactory extends TreeReaderFactory {
         longColVector = (LongColumnVector) previousVector;
       }
       // Read present/isNull stream
-      decimalTreeReader.nextVector(decimalColVector, isNull, batchSize);
+      fromReader.nextVector(decimalColVector, isNull, batchSize);
 
       convertVector(decimalColVector, longColVector, batchSize);
     }
   }
 
   public static class AnyIntegerFromStringGroupTreeReader extends ConvertTreeReader {
-
-    private TreeReader stringGroupTreeReader;
-
     private final TypeDescription readerType;
     private BytesColumnVector bytesColVector;
     private LongColumnVector longColVector;
 
     AnyIntegerFromStringGroupTreeReader(int columnId, TypeDescription fileType,
         TypeDescription readerType, Context context) throws IOException {
-      super(columnId);
+      super(columnId, getStringGroupTreeReader(columnId, fileType, context));
       this.readerType = readerType;
-      stringGroupTreeReader = getStringGroupTreeReader(columnId, fileType, context);
-      setConvertTreeReader(stringGroupTreeReader);
     }
 
     @Override
@@ -633,30 +585,25 @@ public class ConvertTreeReaderFactory extends TreeReaderFactory {
         longColVector = (LongColumnVector) previousVector;
       }
       // Read present/isNull stream
-      stringGroupTreeReader.nextVector(bytesColVector, isNull, batchSize);
+      fromReader.nextVector(bytesColVector, isNull, batchSize);
 
       convertVector(bytesColVector, longColVector, batchSize);
     }
   }
 
   public static class AnyIntegerFromTimestampTreeReader extends ConvertTreeReader {
-
-    private TimestampTreeReader timestampTreeReader;
-
     private final TypeDescription readerType;
     private TimestampColumnVector timestampColVector;
     private LongColumnVector longColVector;
 
     AnyIntegerFromTimestampTreeReader(int columnId, TypeDescription readerType,
         Context context) throws IOException {
-      super(columnId);
+      super(columnId, new TimestampTreeReader(columnId, context));
       this.readerType = readerType;
-      timestampTreeReader = new TimestampTreeReader(columnId, context);
-      setConvertTreeReader(timestampTreeReader);
     }
 
     @Override
-    public void setConvertVectorElement(int elementNum) throws IOException {
+    public void setConvertVectorElement(int elementNum) {
       long millis = timestampColVector.asScratchTimestamp(elementNum).getTime();
       long seconds = Math.floorDiv(millis, 1000);
       downCastAnyInteger(longColVector, elementNum, seconds, readerType);
@@ -672,25 +619,19 @@ public class ConvertTreeReaderFactory extends TreeReaderFactory {
         longColVector = (LongColumnVector) previousVector;
       }
       // Read present/isNull stream
-      timestampTreeReader.nextVector(timestampColVector, isNull, batchSize);
+      fromReader.nextVector(timestampColVector, isNull, batchSize);
 
       convertVector(timestampColVector, longColVector, batchSize);
     }
   }
 
   public static class DoubleFromAnyIntegerTreeReader extends ConvertTreeReader {
-
-    private AnyIntegerTreeReader anyIntegerAsLongTreeReader;
-
     private LongColumnVector longColVector;
     private DoubleColumnVector doubleColVector;
 
     DoubleFromAnyIntegerTreeReader(int columnId, TypeDescription fileType,
         Context context) throws IOException {
-      super(columnId);
-      anyIntegerAsLongTreeReader =
-          new AnyIntegerTreeReader(columnId, fileType, context);
-      setConvertTreeReader(anyIntegerAsLongTreeReader);
+      super(columnId, createFromInteger(columnId, fileType, context));
     }
 
     @Override
@@ -716,27 +657,23 @@ public class ConvertTreeReaderFactory extends TreeReaderFactory {
         doubleColVector = (DoubleColumnVector) previousVector;
       }
       // Read present/isNull stream
-      anyIntegerAsLongTreeReader.nextVector(longColVector, isNull, batchSize);
+      fromReader.nextVector(longColVector, isNull, batchSize);
 
       convertVector(longColVector, doubleColVector, batchSize);
     }
   }
 
   public static class DoubleFromDecimalTreeReader extends ConvertTreeReader {
-
-    private DecimalTreeReader decimalTreeReader;
-
     private final int precision;
     private final int scale;
     private DecimalColumnVector decimalColVector;
     private DoubleColumnVector doubleColVector;
 
     DoubleFromDecimalTreeReader(int columnId, TypeDescription fileType, Context context) throws IOException {
-      super(columnId);
+      super(columnId, new DecimalTreeReader(columnId, fileType.getPrecision(),
+          fileType.getScale(), context));
       this.precision = fileType.getPrecision();
       this.scale = fileType.getScale();
-      decimalTreeReader = new DecimalTreeReader(columnId, precision, scale, context);
-      setConvertTreeReader(decimalTreeReader);
     }
 
     @Override
@@ -755,24 +692,19 @@ public class ConvertTreeReaderFactory extends TreeReaderFactory {
         doubleColVector = (DoubleColumnVector) previousVector;
       }
       // Read present/isNull stream
-      decimalTreeReader.nextVector(decimalColVector, isNull, batchSize);
+      fromReader.nextVector(decimalColVector, isNull, batchSize);
 
       convertVector(decimalColVector, doubleColVector, batchSize);
     }
   }
 
   public static class DoubleFromStringGroupTreeReader extends ConvertTreeReader {
-
-    private TreeReader stringGroupTreeReader;
-
     private BytesColumnVector bytesColVector;
     private DoubleColumnVector doubleColVector;
 
     DoubleFromStringGroupTreeReader(int columnId, TypeDescription fileType, Context context)
         throws IOException {
-      super(columnId);
-      stringGroupTreeReader = getStringGroupTreeReader(columnId, fileType, context);
-      setConvertTreeReader(stringGroupTreeReader);
+      super(columnId, getStringGroupTreeReader(columnId, fileType, context));
     }
 
     @Override
@@ -797,23 +729,18 @@ public class ConvertTreeReaderFactory extends TreeReaderFactory {
         doubleColVector = (DoubleColumnVector) previousVector;
       }
       // Read present/isNull stream
-      stringGroupTreeReader.nextVector(bytesColVector, isNull, batchSize);
+      fromReader.nextVector(bytesColVector, isNull, batchSize);
 
       convertVector(bytesColVector, doubleColVector, batchSize);
     }
   }
 
   public static class DoubleFromTimestampTreeReader extends ConvertTreeReader {
-
-    private TimestampTreeReader timestampTreeReader;
-
     private TimestampColumnVector timestampColVector;
     private DoubleColumnVector doubleColVector;
 
     DoubleFromTimestampTreeReader(int columnId, Context context) throws IOException {
-      super(columnId);
-      timestampTreeReader = new TimestampTreeReader(columnId, context);
-      setConvertTreeReader(timestampTreeReader);
+      super(columnId, new TimestampTreeReader(columnId, context));
     }
 
     @Override
@@ -837,17 +764,15 @@ public class ConvertTreeReaderFactory extends TreeReaderFactory {
         doubleColVector = (DoubleColumnVector) previousVector;
       }
       // Read present/isNull stream
-      timestampTreeReader.nextVector(timestampColVector, isNull, batchSize);
+      fromReader.nextVector(timestampColVector, isNull, batchSize);
 
       convertVector(timestampColVector, doubleColVector, batchSize);
     }
   }
 
   public static class FloatFromDoubleTreeReader extends ConvertTreeReader {
-    FloatFromDoubleTreeReader(int columnId,
-                              TreeReader fromReader) throws IOException {
-      super(columnId);
-      setConvertTreeReader(fromReader);
+    FloatFromDoubleTreeReader(int columnId, Context context) throws IOException {
+      super(columnId, new DoubleTreeReader(columnId));
     }
 
     @Override
@@ -855,7 +780,7 @@ public class ConvertTreeReaderFactory extends TreeReaderFactory {
                            boolean[] isNull,
                            final int batchSize) throws IOException {
       // Read present/isNull stream
-      convertTreeReader.nextVector(previousVector, isNull, batchSize);
+      fromReader.nextVector(previousVector, isNull, batchSize);
       DoubleColumnVector vector = (DoubleColumnVector) previousVector;
       if (previousVector.isRepeating) {
         vector.vector[0] = (float) vector.vector[0];
@@ -868,18 +793,12 @@ public class ConvertTreeReaderFactory extends TreeReaderFactory {
   }
 
   public static class DecimalFromAnyIntegerTreeReader extends ConvertTreeReader {
-
-    private AnyIntegerTreeReader anyIntegerAsLongTreeReader;
-
     private LongColumnVector longColVector;
     private ColumnVector decimalColVector;
 
     DecimalFromAnyIntegerTreeReader(int columnId, TypeDescription fileType, Context context)
         throws IOException {
-      super(columnId);
-      anyIntegerAsLongTreeReader =
-          new AnyIntegerTreeReader(columnId, fileType, context);
-      setConvertTreeReader(anyIntegerAsLongTreeReader);
+      super(columnId, createFromInteger(columnId, fileType, context));
     }
 
     @Override
@@ -904,22 +823,23 @@ public class ConvertTreeReaderFactory extends TreeReaderFactory {
         decimalColVector = previousVector;
       }
       // Read present/isNull stream
-      anyIntegerAsLongTreeReader.nextVector(longColVector, isNull, batchSize);
+      fromReader.nextVector(longColVector, isNull, batchSize);
 
       convertVector(longColVector, decimalColVector, batchSize);
     }
   }
 
   public static class DecimalFromDoubleTreeReader extends ConvertTreeReader {
-
     private DoubleColumnVector doubleColVector;
     private ColumnVector decimalColVector;
 
-    DecimalFromDoubleTreeReader(int columnId, TypeDescription readerType,
+    DecimalFromDoubleTreeReader(int columnId, TypeDescription fileType,
+                                TypeDescription readerType,
                                 TreeReader fromReader)
         throws IOException {
-      super(columnId);
-      setConvertTreeReader(fromReader);
+      super(columnId, fileType.getCategory() == Category.DOUBLE ?
+                          new DoubleTreeReader(columnId) :
+                          new FloatTreeReader(columnId));
     }
 
     @Override
@@ -948,24 +868,19 @@ public class ConvertTreeReaderFactory extends TreeReaderFactory {
         decimalColVector = previousVector;
       }
       // Read present/isNull stream
-      convertTreeReader.nextVector(doubleColVector, isNull, batchSize);
+      fromReader.nextVector(doubleColVector, isNull, batchSize);
 
       convertVector(doubleColVector, decimalColVector, batchSize);
     }
   }
 
   public static class DecimalFromStringGroupTreeReader extends ConvertTreeReader {
-
-    private TreeReader stringGroupTreeReader;
-
     private BytesColumnVector bytesColVector;
     private ColumnVector decimalColVector;
 
     DecimalFromStringGroupTreeReader(int columnId, TypeDescription fileType,
         TypeDescription readerType, Context context) throws IOException {
-      super(columnId);
-      stringGroupTreeReader = getStringGroupTreeReader(columnId, fileType, context);
-      setConvertTreeReader(stringGroupTreeReader);
+      super(columnId, getStringGroupTreeReader(columnId, fileType, context));
     }
 
     @Override
@@ -995,23 +910,18 @@ public class ConvertTreeReaderFactory extends TreeReaderFactory {
         decimalColVector = previousVector;
       }
       // Read present/isNull stream
-      stringGroupTreeReader.nextVector(bytesColVector, isNull, batchSize);
+      fromReader.nextVector(bytesColVector, isNull, batchSize);
 
       convertVector(bytesColVector, decimalColVector, batchSize);
     }
   }
 
   public static class DecimalFromTimestampTreeReader extends ConvertTreeReader {
-
-    private TimestampTreeReader timestampTreeReader;
-
     private TimestampColumnVector timestampColVector;
     private ColumnVector decimalColVector;
 
     DecimalFromTimestampTreeReader(int columnId, Context context) throws IOException {
-      super(columnId);
-      timestampTreeReader = new TimestampTreeReader(columnId, context);
-      setConvertTreeReader(timestampTreeReader);
+      super(columnId, new TimestampTreeReader(columnId, context));
     }
 
     @Override
@@ -1046,16 +956,13 @@ public class ConvertTreeReaderFactory extends TreeReaderFactory {
         decimalColVector = previousVector;
       }
       // Read present/isNull stream
-      timestampTreeReader.nextVector(timestampColVector, isNull, batchSize);
+      fromReader.nextVector(timestampColVector, isNull, batchSize);
 
       convertVector(timestampColVector, decimalColVector, batchSize);
     }
   }
 
   public static class DecimalFromDecimalTreeReader extends ConvertTreeReader {
-
-    private DecimalTreeReader decimalTreeReader;
-
     private DecimalColumnVector fileDecimalColVector;
     private int filePrecision;
     private int fileScale;
@@ -1063,11 +970,10 @@ public class ConvertTreeReaderFactory extends TreeReaderFactory {
 
     DecimalFromDecimalTreeReader(int columnId, TypeDescription fileType, TypeDescription readerType, Context context)
         throws IOException {
-      super(columnId);
+      super(columnId, new DecimalTreeReader(columnId, fileType.getPrecision(),
+          fileType.getScale(), context));
       filePrecision = fileType.getPrecision();
       fileScale = fileType.getScale();
-      decimalTreeReader = new DecimalTreeReader(columnId, filePrecision, fileScale, context);
-      setConvertTreeReader(decimalTreeReader);
     }
 
     @Override
@@ -1091,34 +997,27 @@ public class ConvertTreeReaderFactory extends TreeReaderFactory {
         decimalColVector = previousVector;
       }
       // Read present/isNull stream
-      decimalTreeReader.nextVector(fileDecimalColVector, isNull, batchSize);
+      fromReader.nextVector(fileDecimalColVector, isNull, batchSize);
 
       convertVector(fileDecimalColVector, decimalColVector, batchSize);
     }
   }
 
   public static class StringGroupFromAnyIntegerTreeReader extends ConvertTreeReader {
-
-    private AnyIntegerTreeReader anyIntegerAsLongTreeReader;
-
-    private final TypeDescription readerType;
-    private LongColumnVector longColVector;
-    private BytesColumnVector bytesColVector;
+    protected final TypeDescription readerType;
+    protected LongColumnVector longColVector;
+    protected BytesColumnVector bytesColVector;
 
     StringGroupFromAnyIntegerTreeReader(int columnId, TypeDescription fileType,
         TypeDescription readerType, Context context) throws IOException {
-      super(columnId);
+      super(columnId, createFromInteger(columnId, fileType, context));
       this.readerType = readerType;
-      anyIntegerAsLongTreeReader =
-          new AnyIntegerTreeReader(columnId, fileType, context);
-      setConvertTreeReader(anyIntegerAsLongTreeReader);
     }
 
     @Override
     public void setConvertVectorElement(int elementNum) {
-      long longValue = longColVector.vector[elementNum];
-      String string = anyIntegerAsLongTreeReader.getString(longValue);
-      byte[] bytes = string.getBytes(StandardCharsets.UTF_8);
+      byte[] bytes = Long.toString(longColVector.vector[elementNum])
+                         .getBytes(StandardCharsets.UTF_8);
       assignStringGroupVectorEntry(bytesColVector, elementNum, readerType, bytes);
     }
 
@@ -1132,11 +1031,25 @@ public class ConvertTreeReaderFactory extends TreeReaderFactory {
         bytesColVector = (BytesColumnVector) previousVector;
       }
       // Read present/isNull stream
-      anyIntegerAsLongTreeReader.nextVector(longColVector, isNull, batchSize);
+      fromReader.nextVector(longColVector, isNull, batchSize);
 
       convertVector(longColVector, bytesColVector, batchSize);
     }
   }
+
+    public static class StringGroupFromBooleanTreeReader extends StringGroupFromAnyIntegerTreeReader {
+        StringGroupFromBooleanTreeReader(int columnId, TypeDescription fileType,
+                                         TypeDescription readerType,
+                                         Context context) throws IOException {
+          super(columnId, fileType, readerType, context);
+        }
+      @Override
+      public void setConvertVectorElement(int elementNum) {
+        byte[] bytes = (longColVector.vector[elementNum] != 0 ? "TRUE" : "FALSE")
+                .getBytes(StandardCharsets.UTF_8);
+        assignStringGroupVectorEntry(bytesColVector, elementNum, readerType, bytes);
+      }
+    }
 
   public static class StringGroupFromDoubleTreeReader extends ConvertTreeReader {
 
@@ -1144,11 +1057,13 @@ public class ConvertTreeReaderFactory extends TreeReaderFactory {
     private DoubleColumnVector doubleColVector;
     private BytesColumnVector bytesColVector;
 
-    StringGroupFromDoubleTreeReader(int columnId, TypeDescription readerType,
+    StringGroupFromDoubleTreeReader(int columnId, TypeDescription fileType,
+                                    TypeDescription readerType,
         Context context, TreeReader fromReader) throws IOException {
-      super(columnId);
+      super(columnId, fileType.getCategory() == Category.DOUBLE ?
+                          new DoubleTreeReader(columnId) :
+                          new FloatTreeReader(columnId));
       this.readerType = readerType;
-      setConvertTreeReader(fromReader);
     }
 
     @Override
@@ -1174,7 +1089,7 @@ public class ConvertTreeReaderFactory extends TreeReaderFactory {
         bytesColVector = (BytesColumnVector) previousVector;
       }
       // Read present/isNull stream
-      convertTreeReader.nextVector(doubleColVector, isNull, batchSize);
+      fromReader.nextVector(doubleColVector, isNull, batchSize);
 
       convertVector(doubleColVector, bytesColVector, batchSize);
     }
@@ -1183,9 +1098,6 @@ public class ConvertTreeReaderFactory extends TreeReaderFactory {
 
 
   public static class StringGroupFromDecimalTreeReader extends ConvertTreeReader {
-
-    private DecimalTreeReader decimalTreeReader;
-
     private int precision;
     private int scale;
     private final TypeDescription readerType;
@@ -1195,12 +1107,11 @@ public class ConvertTreeReaderFactory extends TreeReaderFactory {
 
     StringGroupFromDecimalTreeReader(int columnId, TypeDescription fileType,
         TypeDescription readerType, Context context) throws IOException {
-      super(columnId);
+      super(columnId,  new DecimalTreeReader(columnId, fileType.getPrecision(),
+          fileType.getScale(), context));
       this.precision = fileType.getPrecision();
       this.scale = fileType.getScale();
       this.readerType = readerType;
-      decimalTreeReader = new DecimalTreeReader(columnId, precision, scale, context);
-      setConvertTreeReader(decimalTreeReader);
       scratchBuffer = new byte[HiveDecimal.SCRATCH_BUFFER_LEN_TO_BYTES];
     }
 
@@ -1226,7 +1137,7 @@ public class ConvertTreeReaderFactory extends TreeReaderFactory {
         bytesColVector = (BytesColumnVector) previousVector;
       }
       // Read present/isNull stream
-      decimalTreeReader.nextVector(decimalColVector, isNull, batchSize);
+      fromReader.nextVector(decimalColVector, isNull, batchSize);
 
       convertVector(decimalColVector, bytesColVector, batchSize);
     }
@@ -1287,9 +1198,6 @@ public class ConvertTreeReaderFactory extends TreeReaderFactory {
   }
 
   public static class StringGroupFromTimestampTreeReader extends ConvertTreeReader {
-
-    private TimestampTreeReader timestampTreeReader;
-
     private final TypeDescription readerType;
     private TimestampColumnVector timestampColVector;
     private BytesColumnVector bytesColVector;
@@ -1298,10 +1206,8 @@ public class ConvertTreeReaderFactory extends TreeReaderFactory {
 
     StringGroupFromTimestampTreeReader(int columnId, TypeDescription readerType,
         Context context) throws IOException {
-      super(columnId);
+      super(columnId, new TimestampTreeReader(columnId, context));
       this.readerType = readerType;
-      timestampTreeReader = new TimestampTreeReader(columnId, context);
-      setConvertTreeReader(timestampTreeReader);
       local = context.getUseUTCTimestamp() ? ZoneId.of("UTC")
                   : ZoneId.systemDefault();
       Chronology chronology = context.useProlepticGregorian()
@@ -1329,16 +1235,13 @@ public class ConvertTreeReaderFactory extends TreeReaderFactory {
         bytesColVector = (BytesColumnVector) previousVector;
       }
       // Read present/isNull stream
-      timestampTreeReader.nextVector(timestampColVector, isNull, batchSize);
+      fromReader.nextVector(timestampColVector, isNull, batchSize);
 
       convertVector(timestampColVector, bytesColVector, batchSize);
     }
   }
 
   public static class StringGroupFromDateTreeReader extends ConvertTreeReader {
-
-    private DateTreeReader dateTreeReader;
-
     private final TypeDescription readerType;
     private DateColumnVector longColVector;
     private BytesColumnVector bytesColVector;
@@ -1346,10 +1249,8 @@ public class ConvertTreeReaderFactory extends TreeReaderFactory {
 
     StringGroupFromDateTreeReader(int columnId, TypeDescription readerType,
         Context context) throws IOException {
-      super(columnId);
+      super(columnId, new DateTreeReader(columnId, context));
       this.readerType = readerType;
-      dateTreeReader = new DateTreeReader(columnId, context);
-      setConvertTreeReader(dateTreeReader);
       useProlepticGregorian = context.useProlepticGregorian();
     }
 
@@ -1371,31 +1272,26 @@ public class ConvertTreeReaderFactory extends TreeReaderFactory {
         bytesColVector = (BytesColumnVector) previousVector;
       }
       // Read present/isNull stream
-      dateTreeReader.nextVector(longColVector, isNull, batchSize);
+      fromReader.nextVector(longColVector, isNull, batchSize);
 
       convertVector(longColVector, bytesColVector, batchSize);
     }
   }
 
   public static class StringGroupFromStringGroupTreeReader extends ConvertTreeReader {
-
-    private TreeReader stringGroupTreeReader;
-
     private final TypeDescription readerType;
 
     StringGroupFromStringGroupTreeReader(int columnId, TypeDescription fileType,
         TypeDescription readerType, Context context) throws IOException {
-      super(columnId);
+      super(columnId, getStringGroupTreeReader(columnId, fileType, context));
       this.readerType = readerType;
-      stringGroupTreeReader = getStringGroupTreeReader(columnId, fileType, context);
-      setConvertTreeReader(stringGroupTreeReader);
     }
 
     @Override
     public void nextVector(ColumnVector previousVector,
                            boolean[] isNull,
                            final int batchSize) throws IOException {
-      stringGroupTreeReader.nextVector(previousVector, isNull, batchSize);
+      fromReader.nextVector(previousVector, isNull, batchSize);
 
       BytesColumnVector resultColVector = (BytesColumnVector) previousVector;
 
@@ -1422,19 +1318,14 @@ public class ConvertTreeReaderFactory extends TreeReaderFactory {
   }
 
   public static class StringGroupFromBinaryTreeReader extends ConvertTreeReader {
-
-    private BinaryTreeReader binaryTreeReader;
-
     private final TypeDescription readerType;
     private BytesColumnVector inBytesColVector;
     private BytesColumnVector outBytesColVector;
 
     StringGroupFromBinaryTreeReader(int columnId, TypeDescription readerType,
         Context context) throws IOException {
-      super(columnId);
+      super(columnId, new BinaryTreeReader(columnId, context));
       this.readerType = readerType;
-      binaryTreeReader = new BinaryTreeReader(columnId, context);
-      setConvertTreeReader(binaryTreeReader);
     }
 
     @Override
@@ -1467,16 +1358,13 @@ public class ConvertTreeReaderFactory extends TreeReaderFactory {
         outBytesColVector = (BytesColumnVector) previousVector;
       }
       // Read present/isNull stream
-      binaryTreeReader.nextVector(inBytesColVector, isNull, batchSize);
+      fromReader.nextVector(inBytesColVector, isNull, batchSize);
 
       convertVector(inBytesColVector, outBytesColVector, batchSize);
     }
   }
 
   public static class TimestampFromAnyIntegerTreeReader extends ConvertTreeReader {
-
-    private AnyIntegerTreeReader anyIntegerAsLongTreeReader;
-
     private LongColumnVector longColVector;
     private TimestampColumnVector timestampColVector;
     private final boolean useUtc;
@@ -1486,10 +1374,7 @@ public class ConvertTreeReaderFactory extends TreeReaderFactory {
 
     TimestampFromAnyIntegerTreeReader(int columnId, TypeDescription fileType,
         Context context) throws IOException {
-      super(columnId);
-      anyIntegerAsLongTreeReader =
-          new AnyIntegerTreeReader(columnId, fileType, context);
-      setConvertTreeReader(anyIntegerAsLongTreeReader);
+      super(columnId, createFromInteger(columnId, fileType, context));
       this.useUtc = context.getUseUTCTimestamp();
       local = useUtc ? TimeZone.getTimeZone("UTC") : TimeZone.getDefault();
       fileUsedProlepticGregorian = context.fileUsedProlepticGregorian();
@@ -1520,7 +1405,7 @@ public class ConvertTreeReaderFactory extends TreeReaderFactory {
       }
       timestampColVector.changeCalendar(fileUsedProlepticGregorian, false);
       // Read present/isNull stream
-      anyIntegerAsLongTreeReader.nextVector(longColVector, isNull, batchSize);
+      fromReader.nextVector(longColVector, isNull, batchSize);
 
       convertVector(longColVector, timestampColVector, batchSize);
       timestampColVector.changeCalendar(useProlepticGregorian, true);
@@ -1537,9 +1422,10 @@ public class ConvertTreeReaderFactory extends TreeReaderFactory {
     private final boolean fileUsedProlepticGregorian;
 
     TimestampFromDoubleTreeReader(int columnId, TypeDescription fileType,
-        Context context, TreeReader fromReader) throws IOException {
-      super(columnId);
-      setConvertTreeReader(fromReader);
+        TypeDescription readerType, Context context, TreeReader fromReader) throws IOException {
+      super(columnId, fileType.getCategory() == Category.DOUBLE ?
+                          new DoubleTreeReader(columnId) :
+                          new FloatTreeReader(columnId));
       useUtc = context.getUseUTCTimestamp();
       local = useUtc ? TimeZone.getTimeZone("UTC") : TimeZone.getDefault();
       useProlepticGregorian = context.useProlepticGregorian();
@@ -1579,7 +1465,7 @@ public class ConvertTreeReaderFactory extends TreeReaderFactory {
       }
       timestampColVector.changeCalendar(fileUsedProlepticGregorian, false);
       // Read present/isNull stream
-      convertTreeReader.nextVector(doubleColVector, isNull, batchSize);
+      fromReader.nextVector(doubleColVector, isNull, batchSize);
 
       convertVector(doubleColVector, timestampColVector, batchSize);
       timestampColVector.changeCalendar(useProlepticGregorian, true);
@@ -1587,9 +1473,6 @@ public class ConvertTreeReaderFactory extends TreeReaderFactory {
   }
 
   public static class TimestampFromDecimalTreeReader extends ConvertTreeReader {
-
-    private DecimalTreeReader decimalTreeReader;
-
     private final int precision;
     private final int scale;
     private DecimalColumnVector decimalColVector;
@@ -1601,11 +1484,10 @@ public class ConvertTreeReaderFactory extends TreeReaderFactory {
 
     TimestampFromDecimalTreeReader(int columnId, TypeDescription fileType,
         Context context) throws IOException {
-      super(columnId);
+      super(columnId, new DecimalTreeReader(columnId, fileType.getPrecision(),
+          fileType.getScale(), context));
       this.precision = fileType.getPrecision();
       this.scale = fileType.getScale();
-      decimalTreeReader = new DecimalTreeReader(columnId, precision, scale, context);
-      setConvertTreeReader(decimalTreeReader);
       useUtc = context.getUseUTCTimestamp();
       local = useUtc ? TimeZone.getTimeZone("UTC") : TimeZone.getDefault();
       useProlepticGregorian = context.useProlepticGregorian();
@@ -1640,7 +1522,7 @@ public class ConvertTreeReaderFactory extends TreeReaderFactory {
       }
       timestampColVector.changeCalendar(fileUsedProlepticGregorian, false);
       // Read present/isNull stream
-      decimalTreeReader.nextVector(decimalColVector, isNull, batchSize);
+      fromReader.nextVector(decimalColVector, isNull, batchSize);
 
       convertVector(decimalColVector, timestampColVector, batchSize);
       timestampColVector.changeCalendar(useProlepticGregorian, true);
@@ -1648,9 +1530,6 @@ public class ConvertTreeReaderFactory extends TreeReaderFactory {
   }
 
   public static class TimestampFromStringGroupTreeReader extends ConvertTreeReader {
-
-    private TreeReader stringGroupTreeReader;
-
     private BytesColumnVector bytesColVector;
     private TimestampColumnVector timestampColVector;
     private final DateTimeFormatter formatter;
@@ -1658,9 +1537,7 @@ public class ConvertTreeReaderFactory extends TreeReaderFactory {
 
     TimestampFromStringGroupTreeReader(int columnId, TypeDescription fileType, Context context)
         throws IOException {
-      super(columnId);
-      stringGroupTreeReader = getStringGroupTreeReader(columnId, fileType, context);
-      setConvertTreeReader(stringGroupTreeReader);
+      super(columnId, getStringGroupTreeReader(columnId, fileType, context));
       useProlepticGregorian = context.useProlepticGregorian();
       Chronology chronology = useProlepticGregorian
                                   ? IsoChronology.INSTANCE
@@ -1696,7 +1573,7 @@ public class ConvertTreeReaderFactory extends TreeReaderFactory {
         timestampColVector = (TimestampColumnVector) previousVector;
       }
       // Read present/isNull stream
-      stringGroupTreeReader.nextVector(bytesColVector, isNull, batchSize);
+      fromReader.nextVector(bytesColVector, isNull, batchSize);
 
       convertVector(bytesColVector, timestampColVector, batchSize);
       timestampColVector.changeCalendar(useProlepticGregorian, false);
@@ -1704,9 +1581,6 @@ public class ConvertTreeReaderFactory extends TreeReaderFactory {
   }
 
   public static class TimestampFromDateTreeReader extends ConvertTreeReader {
-
-    private DateTreeReader dateTreeReader;
-
     private LongColumnVector longColVector;
     private TimestampColumnVector timestampColVector;
     private final boolean useUtc;
@@ -1715,9 +1589,7 @@ public class ConvertTreeReaderFactory extends TreeReaderFactory {
 
     TimestampFromDateTreeReader(int columnId, TypeDescription fileType,
         Context context) throws IOException {
-      super(columnId);
-      dateTreeReader = new DateTreeReader(columnId, context);
-      setConvertTreeReader(dateTreeReader);
+      super(columnId, new DateTreeReader(columnId, context));
       useUtc = context.getUseUTCTimestamp();
       local = useUtc ? TimeZone.getTimeZone("UTC") : TimeZone.getDefault();
       useProlepticGregorian = context.useProlepticGregorian();
@@ -1743,7 +1615,7 @@ public class ConvertTreeReaderFactory extends TreeReaderFactory {
         timestampColVector = (TimestampColumnVector) previousVector;
       }
       // Read present/isNull stream
-      dateTreeReader.nextVector(longColVector, isNull, batchSize);
+      fromReader.nextVector(longColVector, isNull, batchSize);
 
       convertVector(longColVector, timestampColVector, batchSize);
       timestampColVector.changeCalendar(useProlepticGregorian, false);
@@ -1751,9 +1623,6 @@ public class ConvertTreeReaderFactory extends TreeReaderFactory {
   }
 
   public static class DateFromStringGroupTreeReader extends ConvertTreeReader {
-
-    private TreeReader stringGroupTreeReader;
-
     private BytesColumnVector bytesColVector;
     private LongColumnVector longColVector;
     private DateColumnVector dateColumnVector;
@@ -1761,14 +1630,12 @@ public class ConvertTreeReaderFactory extends TreeReaderFactory {
 
     DateFromStringGroupTreeReader(int columnId, TypeDescription fileType, Context context)
         throws IOException {
-      super(columnId);
-      stringGroupTreeReader = getStringGroupTreeReader(columnId, fileType, context);
-      setConvertTreeReader(stringGroupTreeReader);
+      super(columnId, getStringGroupTreeReader(columnId, fileType, context));
       useProlepticGregorian = context.useProlepticGregorian();
     }
 
     @Override
-    public void setConvertVectorElement(int elementNum) throws IOException {
+    public void setConvertVectorElement(int elementNum) {
       String stringValue =
           SerializationUtils.bytesVectorToString(bytesColVector, elementNum);
       Integer dateValue = DateUtils.parseDate(stringValue, useProlepticGregorian);
@@ -1799,7 +1666,7 @@ public class ConvertTreeReaderFactory extends TreeReaderFactory {
         }
       }
       // Read present/isNull stream
-      stringGroupTreeReader.nextVector(bytesColVector, isNull, batchSize);
+      fromReader.nextVector(bytesColVector, isNull, batchSize);
 
       convertVector(bytesColVector, longColVector, batchSize);
       if (dateColumnVector != null) {
@@ -1809,25 +1676,20 @@ public class ConvertTreeReaderFactory extends TreeReaderFactory {
   }
 
   public static class DateFromTimestampTreeReader extends ConvertTreeReader {
-
-    private TimestampTreeReader timestampTreeReader;
-
     private TimestampColumnVector timestampColVector;
     private LongColumnVector longColVector;
     private final ZoneId local;
     private final boolean useProlepticGregorian;
 
     DateFromTimestampTreeReader(int columnId, Context context) throws IOException {
-      super(columnId);
-      timestampTreeReader = new TimestampTreeReader(columnId, context);
-      setConvertTreeReader(timestampTreeReader);
+      super(columnId, new TimestampTreeReader(columnId, context));
       boolean useUtc = context.getUseUTCTimestamp();
       local = useUtc ? ZoneId.of("UTC") : ZoneId.systemDefault();
       useProlepticGregorian = context.useProlepticGregorian();
     }
 
     @Override
-    public void setConvertVectorElement(int elementNum) throws IOException {
+    public void setConvertVectorElement(int elementNum) {
       LocalDate day = LocalDate.from(
           Instant.ofEpochSecond(
               Math.floorDiv(timestampColVector.time[elementNum], 1000),
@@ -1850,32 +1712,13 @@ public class ConvertTreeReaderFactory extends TreeReaderFactory {
         }
       }
       // Read present/isNull stream
-      timestampTreeReader.nextVector(timestampColVector, isNull, batchSize);
+      fromReader.nextVector(timestampColVector, isNull, batchSize);
 
       convertVector(timestampColVector, longColVector, batchSize);
       if (longColVector instanceof DateColumnVector) {
         ((DateColumnVector) longColVector)
             .changeCalendar(useProlepticGregorian, false);
       }
-    }
-  }
-
-  public static class BinaryFromStringGroupTreeReader extends ConvertTreeReader {
-
-    private TreeReader stringGroupTreeReader;
-
-    BinaryFromStringGroupTreeReader(int columnId, TypeDescription fileType, Context context)
-        throws IOException {
-      super(columnId);
-      stringGroupTreeReader = getStringGroupTreeReader(columnId, fileType, context);
-      setConvertTreeReader(stringGroupTreeReader);
-    }
-
-    @Override
-    public void nextVector(ColumnVector previousVector,
-                           boolean[] isNull,
-                           final int batchSize) throws IOException {
-      super.nextVector(previousVector, isNull, batchSize);
     }
   }
 
@@ -1946,25 +1789,25 @@ public class ConvertTreeReaderFactory extends TreeReaderFactory {
     case SHORT:
     case INT:
     case LONG:
-      return new AnyIntegerFromDoubleTreeReader(columnId, readerType, fromReader);
+      return new AnyIntegerFromDoubleTreeReader(columnId, fileType, readerType, fromReader);
 
     case FLOAT:
-      return new FloatFromDoubleTreeReader(columnId, fromReader);
+      return new FloatFromDoubleTreeReader(columnId, context);
 
     case DOUBLE:
-      return fromReader;
+      return new FloatTreeReader(columnId);
 
     case DECIMAL:
-      return new DecimalFromDoubleTreeReader(columnId, readerType, fromReader);
+      return new DecimalFromDoubleTreeReader(columnId, fileType, readerType, fromReader);
 
     case STRING:
     case CHAR:
     case VARCHAR:
-      return new StringGroupFromDoubleTreeReader(columnId, readerType, context,
+      return new StringGroupFromDoubleTreeReader(columnId, fileType, readerType, context,
           fromReader);
 
     case TIMESTAMP:
-      return new TimestampFromDoubleTreeReader(columnId, readerType, context,
+      return new TimestampFromDoubleTreeReader(columnId, fileType, readerType, context,
           fromReader);
 
     // Not currently supported conversion(s):
@@ -2058,112 +1901,7 @@ public class ConvertTreeReaderFactory extends TreeReaderFactory {
           readerType.getCategory() + " to self needed");
 
     case BINARY:
-      return new BinaryFromStringGroupTreeReader(columnId, fileType, context);
-
-    case TIMESTAMP:
-      return new TimestampFromStringGroupTreeReader(columnId, fileType, context);
-
-    case DATE:
-      return new DateFromStringGroupTreeReader(columnId, fileType, context);
-
-    // Not currently supported conversion(s):
-
-    case STRUCT:
-    case LIST:
-    case MAP:
-    case UNION:
-    default:
-      throw new IllegalArgumentException("Unsupported type " +
-          readerType.getCategory());
-    }
-  }
-
-  private static TreeReader createCharConvertTreeReader(int columnId,
-                                                        TypeDescription fileType,
-                                                        TypeDescription readerType,
-                                                        Context context) throws IOException {
-
-    // CONVERT from CHAR to schema type.
-    switch (readerType.getCategory()) {
-
-    case BOOLEAN:
-    case BYTE:
-    case SHORT:
-    case INT:
-    case LONG:
-      return new AnyIntegerFromStringGroupTreeReader(columnId, fileType, readerType, context);
-
-    case FLOAT:
-    case DOUBLE:
-      return new DoubleFromStringGroupTreeReader(columnId, fileType, context);
-
-    case DECIMAL:
-      return new DecimalFromStringGroupTreeReader(columnId, fileType, readerType, context);
-
-    case STRING:
-      return new StringGroupFromStringGroupTreeReader(columnId, fileType, readerType, context);
-
-    case VARCHAR:
-      return new StringGroupFromStringGroupTreeReader(columnId, fileType, readerType, context);
-
-    case CHAR:
-      return new StringGroupFromStringGroupTreeReader(columnId, fileType, readerType, context);
-
-    case BINARY:
-      return new BinaryFromStringGroupTreeReader(columnId, fileType, context);
-
-    case TIMESTAMP:
-      return new TimestampFromStringGroupTreeReader(columnId, fileType, context);
-
-    case DATE:
-      return new DateFromStringGroupTreeReader(columnId, fileType, context);
-
-    // Not currently supported conversion(s):
-
-    case STRUCT:
-    case LIST:
-    case MAP:
-    case UNION:
-    default:
-      throw new IllegalArgumentException("Unsupported type " +
-          readerType.getCategory());
-    }
-  }
-
-  private static TreeReader createVarcharConvertTreeReader(int columnId,
-                                                           TypeDescription fileType,
-                                                           TypeDescription readerType,
-                                                           Context context) throws IOException {
-
-    // CONVERT from VARCHAR to schema type.
-    switch (readerType.getCategory()) {
-
-    case BOOLEAN:
-    case BYTE:
-    case SHORT:
-    case INT:
-    case LONG:
-      return new AnyIntegerFromStringGroupTreeReader(columnId, fileType, readerType, context);
-
-    case FLOAT:
-    case DOUBLE:
-      return new DoubleFromStringGroupTreeReader(columnId, fileType, context);
-
-    case DECIMAL:
-      return new DecimalFromStringGroupTreeReader(columnId, fileType, readerType, context);
-
-    case STRING:
-      return new StringGroupFromStringGroupTreeReader(columnId, fileType, readerType, context);
-
-    case CHAR:
-      return new StringGroupFromStringGroupTreeReader(columnId, fileType, readerType, context);
-
-    case VARCHAR:
-      return new StringGroupFromStringGroupTreeReader(columnId, fileType, readerType, context);
-
-    case BINARY:
-      return new BinaryFromStringGroupTreeReader(columnId, fileType, context);
-
+      return new BinaryTreeReader(columnId, context);
     case TIMESTAMP:
       return new TimestampFromStringGroupTreeReader(columnId, fileType, context);
 
@@ -2183,7 +1921,6 @@ public class ConvertTreeReaderFactory extends TreeReaderFactory {
   }
 
   private static TreeReader createTimestampConvertTreeReader(int columnId,
-                                                             TypeDescription fileType,
                                                              TypeDescription readerType,
                                                              Context context) throws IOException {
 
@@ -2230,7 +1967,6 @@ public class ConvertTreeReaderFactory extends TreeReaderFactory {
   }
 
   private static TreeReader createDateConvertTreeReader(int columnId,
-                                                        TypeDescription fileType,
                                                         TypeDescription readerType,
                                                         Context context) throws IOException {
 
@@ -2271,7 +2007,6 @@ public class ConvertTreeReaderFactory extends TreeReaderFactory {
   }
 
   private static TreeReader createBinaryConvertTreeReader(int columnId,
-                                                          TypeDescription fileType,
                                                           TypeDescription readerType,
                                                           Context context) throws IOException {
 
@@ -2457,22 +2192,18 @@ public class ConvertTreeReaderFactory extends TreeReaderFactory {
       return createDecimalConvertTreeReader(columnId, fileType, readerType, context);
 
     case STRING:
+    case CHAR:
+    case VARCHAR:
       return createStringConvertTreeReader(columnId, fileType, readerType, context);
 
-    case CHAR:
-      return createCharConvertTreeReader(columnId, fileType, readerType, context);
-
-    case VARCHAR:
-      return createVarcharConvertTreeReader(columnId, fileType, readerType, context);
-
     case TIMESTAMP:
-      return createTimestampConvertTreeReader(columnId, fileType, readerType, context);
+      return createTimestampConvertTreeReader(columnId, readerType, context);
 
     case DATE:
-      return createDateConvertTreeReader(columnId, fileType, readerType, context);
+      return createDateConvertTreeReader(columnId, readerType, context);
 
     case BINARY:
-      return createBinaryConvertTreeReader(columnId, fileType, readerType, context);
+      return createBinaryConvertTreeReader(columnId, readerType, context);
 
     // UNDONE: Complex conversions...
     case STRUCT:
