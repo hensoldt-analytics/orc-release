@@ -12,7 +12,7 @@
   See the License for the specific language governing permissions and
   limitations under the License.
 -->
-<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+<project xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns="http://maven.apache.org/POM/4.0.0" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
   <modelVersion>4.0.0</modelVersion>
   <parent>
     <groupId>org.apache</groupId>
@@ -21,7 +21,7 @@
   </parent>
   <groupId>org.apache.orc</groupId>
   <artifactId>orc</artifactId>
-  <version>1.4.4-SNAPSHOT</version>
+  <version>1.4.3.2.6.5.3016-2</version>
   <packaging>pom</packaging>
 
   <name>Apache ORC</name>
@@ -67,10 +67,10 @@
     <example.dir>${project.basedir}/../../examples</example.dir>
 
     <avro.version>1.8.1</avro.version>
-    <hadoop.version>2.6.4</hadoop.version>
+    <hadoop.version>2.7.3.2.6.5.3016-2</hadoop.version>
     <hive.version>2.1.1</hive.version>
     <storage-api.version>2.2.1</storage-api.version>
-    <zookeeper.version>3.4.6</zookeeper.version>
+    <zookeeper.version>3.4.6.2.6.5.3016-2</zookeeper.version>
   </properties>
 
   <build>
@@ -315,17 +315,17 @@
       <dependency>
         <groupId>org.apache.orc</groupId>
         <artifactId>orc-core</artifactId>
-        <version>1.4.4-SNAPSHOT</version>
+        <version>1.4.3.2.6.5.3016-2</version>
       </dependency>
       <dependency>
         <groupId>org.apache.orc</groupId>
         <artifactId>orc-mapreduce</artifactId>
-        <version>1.4.4-SNAPSHOT</version>
+        <version>1.4.3.2.6.5.3016-2</version>
       </dependency>
       <dependency>
         <groupId>org.apache.orc</groupId>
         <artifactId>orc-tools</artifactId>
-        <version>1.4.4-SNAPSHOT</version>
+        <version>1.4.3.2.6.5.3016-2</version>
       </dependency>
 
       <!-- inter-project depedencies -->
