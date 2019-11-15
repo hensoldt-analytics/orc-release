@@ -110,7 +110,10 @@ public class RecordReaderImpl implements RecordReader {
   static int findColumns(SchemaEvolution evolution,
                          String columnName) {
     try {
-      return evolution.getFileSchema().findSubtype(columnName).getId();
+      TypeDescription readerColumn =
+          evolution.getReaderBaseSchema().findSubtype(columnName);
+      TypeDescription fileColumn = evolution.getFileType(readerColumn);
+      return fileColumn == null ? -1 : fileColumn.getId();
     } catch (IllegalArgumentException e) {
       return -1;
     }
