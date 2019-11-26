@@ -221,7 +221,9 @@ public class RecordReaderImpl implements RecordReader {
           rowIndexStride,
           evolution,
           writerVersion,
-          fileReader.useUTCTimestamp);
+          fileReader.useUTCTimestamp,
+          fileReader.writerUsedProlepticGregorian(),
+          fileReader.options.getConvertToProlepticGregorian());
     } else {
       sargApp = null;
     }
@@ -276,7 +278,9 @@ public class RecordReaderImpl implements RecordReader {
           .setSchemaEvolution(evolution)
           .skipCorrupt(skipCorrupt)
           .fileFormat(fileReader.getFileVersion())
-          .useUTCTimestamp(fileReader.useUTCTimestamp);
+          .useUTCTimestamp(fileReader.useUTCTimestamp)
+          .setProlepticGregorian(fileReader.writerUsedProlepticGregorian(),
+                                 fileReader.options.getConvertToProlepticGregorian());
     reader = TreeReaderFactory.createTreeReader(evolution.getReaderSchema(),
         readerContext);
 
@@ -877,15 +881,21 @@ public class RecordReaderImpl implements RecordReader {
     private SchemaEvolution evolution;
     private final long[] exceptionCount;
     private final boolean useUTCTimestamp;
+    private final boolean writerUsedProlepticGregorian;
+    private final boolean convertToProlepticGregorian;
 
     public SargApplier(SearchArgument sarg,
                        long rowIndexStride,
                        SchemaEvolution evolution,
                        OrcFile.WriterVersion writerVersion,
-                       boolean useUTCTimestamp) {
+                       boolean useUTCTimestamp,
+                       boolean writerUsedProlepticGregorian,
+                       boolean convertToProlepticGregorian) {
       this.writerVersion = writerVersion;
       this.sarg = sarg;
       sargLeaves = sarg.getLeaves();
+      this.writerUsedProlepticGregorian = writerUsedProlepticGregorian;
+      this.convertToProlepticGregorian = convertToProlepticGregorian;
       filterColumns = mapSargColumnsToOrcInternalColIdx(sargLeaves,
                                                         evolution);
       this.rowIndexStride = rowIndexStride;
