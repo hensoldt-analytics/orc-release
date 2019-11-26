@@ -2018,7 +2018,7 @@ public class TestRecordReaderImpl {
             .end().build();
     RecordReaderImpl.SargApplier applier =
         new RecordReaderImpl.SargApplier(sarg, 1000, evolution,
-            OrcFile.WriterVersion.ORC_135, false);
+            OrcFile.WriterVersion.ORC_135, false, false, false);
     OrcProto.StripeInformation stripe =
         OrcProto.StripeInformation.newBuilder().setNumberOfRows(4000).build();
     OrcProto.RowIndex[] indexes = new OrcProto.RowIndex[3];
@@ -2066,7 +2066,7 @@ public class TestRecordReaderImpl {
             .end().build();
     RecordReaderImpl.SargApplier applier =
         new RecordReaderImpl.SargApplier(sarg, 1000, evolution,
-            OrcFile.WriterVersion.ORC_135, false);
+            OrcFile.WriterVersion.ORC_135, false, false, false);
     OrcProto.StripeInformation stripe =
         OrcProto.StripeInformation.newBuilder().setNumberOfRows(3000).build();
     OrcProto.RowIndex[] indexes = new OrcProto.RowIndex[3];
@@ -2113,7 +2113,8 @@ public class TestRecordReaderImpl {
         .equals("y", PredicateLeaf.Type.BOOLEAN, true).end().build();
 
     RecordReaderImpl.SargApplier applier =
-        new RecordReaderImpl.SargApplier(sarg, 1000, evo, OrcFile.WriterVersion.ORC_135, false);
+        new RecordReaderImpl.SargApplier(sarg, 1000, evo,
+            OrcFile.WriterVersion.ORC_135, false, false, false);
 
     OrcProto.StripeInformation stripe =
         OrcProto.StripeInformation.newBuilder().setNumberOfRows(2000).build();
@@ -2130,7 +2131,7 @@ public class TestRecordReaderImpl {
 
     boolean[] rows = applier.pickRowGroups(new ReaderImpl.StripeInformationImpl(stripe),
         indexes, null, encodings, null, false);
-    assertEquals(SargApplier.READ_ALL_RGS, rows); //cannot filter for new column, return all rows
+    assertEquals(RecordReaderImpl.SargApplier.READ_ALL_RGS, rows); //cannot filter for new column, return all rows
   }
 
   private boolean[] includeAll(TypeDescription readerType) {
