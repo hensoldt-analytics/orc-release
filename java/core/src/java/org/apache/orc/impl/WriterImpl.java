@@ -526,9 +526,11 @@ public class WriterImpl implements WriterInternal, MemoryManager.Callback {
     rawDataSize = computeRawDataSize();
     // serialize the types
     writeTypes(builder, schema);
-    builder.setCalendar(useProlepticGregorian
+    if (hasDateOrTime(schema)) {
+      builder.setCalendar(useProlepticGregorian
                               ? OrcProto.CalendarKind.PROLEPTIC_GREGORIAN
                               : OrcProto.CalendarKind.JULIAN_GREGORIAN);
+    }
     // add the stripe information
     for(OrcProto.StripeInformation stripe: stripes) {
       builder.addStripes(stripe);

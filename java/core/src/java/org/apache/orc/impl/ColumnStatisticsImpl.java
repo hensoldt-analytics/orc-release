@@ -1347,21 +1347,21 @@ public class ColumnStatisticsImpl implements ColumnStatistics {
         maximum = DateUtils.convertTime(
             SerializationUtils.convertToUtc(TimeZone.getDefault(),
                timestampStats.getMaximum()),
-            writerUsedProlepticGregorian, convertToProlepticGregorian, true);
+            writerUsedProlepticGregorian, convertToProlepticGregorian);
       }
       if (timestampStats.hasMinimum()) {
         minimum = DateUtils.convertTime(
             SerializationUtils.convertToUtc(TimeZone.getDefault(),
                 timestampStats.getMinimum()),
-            writerUsedProlepticGregorian, convertToProlepticGregorian, true);
+            writerUsedProlepticGregorian, convertToProlepticGregorian);
       }
       if (timestampStats.hasMaximumUtc()) {
         maximum = DateUtils.convertTime(timestampStats.getMaximumUtc(),
-            writerUsedProlepticGregorian, convertToProlepticGregorian, true);
+            writerUsedProlepticGregorian, convertToProlepticGregorian);
       }
       if (timestampStats.hasMinimumUtc()) {
         minimum = DateUtils.convertTime(timestampStats.getMinimumUtc(),
-            writerUsedProlepticGregorian, convertToProlepticGregorian, true);
+            writerUsedProlepticGregorian, convertToProlepticGregorian);
       }
     }
 
