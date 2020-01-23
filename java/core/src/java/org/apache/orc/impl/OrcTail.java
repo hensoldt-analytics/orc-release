@@ -92,6 +92,23 @@ public final class OrcTail {
     return (int) fileTail.getPostscript().getCompressionBlockSize();
   }
 
+  /**
+   * Get statistics, assuming the dates aren't and shouldn't be proleptic gregorian.
+   * @return
+   * @throws IOException
+   * @deprecated Use {@link #getStripeStatistics(boolean, boolean)} instead
+   */
+  @Deprecated
+  public List<StripeStatistics> getStripeStatistics()
+      throws IOException {
+    OrcProto.Footer footer = fileTail.getFooter();
+    boolean writerUsedProlepticGregorian =
+        footer.hasCalendar() ?
+            footer.getCalendar() == OrcProto.CalendarKind.PROLEPTIC_GREGORIAN :
+            false;
+    return getStripeStatistics(writerUsedProlepticGregorian, false);
+  }
+
   public List<StripeStatistics> getStripeStatistics(
       boolean writerUsedProlepticGregorian, boolean convertToProlepticGregorian)
       throws IOException {
