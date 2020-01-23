@@ -881,6 +881,19 @@ public class RecordReaderImpl implements RecordReader {
     private final boolean writerUsedProlepticGregorian;
     private final boolean convertToProlepticGregorian;
 
+    /**
+     * Create a SargApplier without proleptic gregorian values.
+     * @deprecated Use {@link #SargApplier(SearchArgument, long, SchemaEvolution, OrcFile.WriterVersion, boolean, boolean, boolean)} instead
+     */
+    @Deprecated
+    public SargApplier(SearchArgument sarg,
+        long rowIndexStride,
+        SchemaEvolution evolution,
+        OrcFile.WriterVersion writerVersion,
+        boolean useUTCTimestamp) {
+      this(sarg, rowIndexStride, evolution, writerVersion, useUTCTimestamp, false, false);
+    }
+
     public SargApplier(SearchArgument sarg,
                        long rowIndexStride,
                        SchemaEvolution evolution,
