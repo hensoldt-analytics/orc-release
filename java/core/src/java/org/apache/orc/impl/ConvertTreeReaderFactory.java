@@ -21,6 +21,13 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.sql.Date;
 import java.sql.Timestamp;
+import java.time.Instant;
+import java.time.ZoneId;
+import java.time.format.DateTimeFormatter;
+import java.time.format.DateTimeFormatterBuilder;
+import java.time.format.DateTimeParseException;
+import java.time.format.SignStyle;
+import java.time.temporal.ChronoField;
 import java.util.EnumMap;
 import java.util.Map;
 
@@ -220,19 +227,6 @@ public class ConvertTreeReaderFactory extends TreeReaderFactory {
         HiveDecimal value = HiveDecimal.create(string);
         return value;
       } catch (NumberFormatException e) {
-        return null;
-      }
-    }
-
-    /**
-     * @param string
-     * @return the Timestamp parsed, or null if there was a parse error.
-     */
-    protected Timestamp parseTimestampFromString(String string) {
-      try {
-        Timestamp value = Timestamp.valueOf(string);
-        return value;
-      } catch (IllegalArgumentException e) {
         return null;
       }
     }
@@ -1623,11 +1617,45 @@ public class ConvertTreeReaderFactory extends TreeReaderFactory {
     }
   }
 
+  /**
+   * The format for converting from/to string/date.
+   * Eg. "2019-07-09"
+   */
+  static final DateTimeFormatter DATE_FORMAT =
+      new DateTimeFormatterBuilder()
+          .appendValue(ChronoField.YEAR, 4, 10, SignStyle.EXCEEDS_PAD)
+          .appendLiteral('-')
+          .appendValue(ChronoField.MONTH_OF_YEAR, 2)
+          .appendLiteral('-')
+          .appendValue(ChronoField.DAY_OF_MONTH, 2)
+          .toFormatter();
+
+
+  /**
+   * The format for converting from/to string/timestamp.
+   * Eg. "2019-07-09 13:11:00"
+   */
+  static final DateTimeFormatter TIMESTAMP_FORMAT =
+      new DateTimeFormatterBuilder()
+          .append(DATE_FORMAT)
+          .appendLiteral(' ')
+          .appendValue(ChronoField.HOUR_OF_DAY, 2)
+          .appendLiteral(':')
+          .appendValue(ChronoField.MINUTE_OF_HOUR, 2)
+          .optionalStart()
+          .appendLiteral(':')
+          .appendValue(ChronoField.SECOND_OF_MINUTE, 2)
+          .optionalStart()
+          .appendFraction(ChronoField.NANO_OF_SECOND, 0, 9, true)
+          .toFormatter();
+
   public static class StringGroupFromTimestampTreeReader extends ConvertTreeReader {
 
     private TimestampTreeReader timestampTreeReader;
 
     private final TypeDescription readerType;
+    private final ZoneId local;
+    private final DateTimeFormatter formatter;
     private TimestampColumnVector timestampColVector;
     private BytesColumnVector bytesColVector;
 
@@ -1635,15 +1663,19 @@ public class ConvertTreeReaderFactory extends TreeReaderFactory {
         Context context) throws IOException {
       super(columnId);
       this.readerType = readerType;
+      local = context.getUseUTCTimestamp() ? ZoneId.of("UTC") : ZoneId.systemDefault();
+      formatter = TIMESTAMP_FORMAT;
       timestampTreeReader = new TimestampTreeReader(columnId, context);
       setConvertTreeReader(timestampTreeReader);
     }
 
     @Override
     public void setConvertVectorElement(int elementNum) throws IOException {
-      String string =
-          timestampColVector.asScratchTimestamp(elementNum).toString();
-      byte[] bytes = string.getBytes(StandardCharsets.UTF_8);
+      Instant instant = Instant.ofEpochSecond(Math.floorDiv(
+          timestampColVector.time[elementNum], 1000),
+          timestampColVector.nanos[elementNum]);
+      byte[] bytes = instant.atZone(local).format(formatter)
+          .getBytes(StandardCharsets.UTF_8);
       assignStringGroupVectorEntry(bytesColVector, elementNum, readerType, bytes);
     }
 
@@ -1964,22 +1996,28 @@ public class ConvertTreeReaderFactory extends TreeReaderFactory {
 
     private BytesColumnVector bytesColVector;
     private TimestampColumnVector timestampColVector;
+    private final DateTimeFormatter formatter;
 
     TimestampFromStringGroupTreeReader(int columnId, TypeDescription fileType, Context context)
         throws IOException {
       super(columnId);
       stringGroupTreeReader = getStringGroupTreeReader(columnId, fileType, context);
       setConvertTreeReader(stringGroupTreeReader);
+      formatter = TIMESTAMP_FORMAT
+          .withZone(context.getUseUTCTimestamp() ?
+              ZoneId.of("UTC") :
+              ZoneId.systemDefault());
     }
 
     @Override
     public void setConvertVectorElement(int elementNum) throws IOException {
-      String stringValue =
+      String str =
           stringFromBytesColumnVectorEntry(bytesColVector, elementNum);
-      Timestamp timestampValue = parseTimestampFromString(stringValue);
-      if (timestampValue != null) {
-        timestampColVector.set(elementNum, timestampValue);
-      } else {
+      try {
+        Instant instant = Instant.from(formatter.parse(str));
+        timestampColVector.time[elementNum] = instant.toEpochMilli();
+        timestampColVector.nanos[elementNum] = instant.getNano();
+      } catch (DateTimeParseException e) {
         timestampColVector.noNulls = false;
         timestampColVector.isNull[elementNum] = true;
       }

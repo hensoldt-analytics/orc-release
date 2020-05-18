@@ -682,6 +682,64 @@ public class TestSchemaEvolution {
   }
 
   @Test
+  public void testTimestampToStringEvolution() throws Exception {
+    testFilePath = new Path(workDir, "TestOrcFile." +
+        testCaseName.getMethodName() + ".orc");
+    TypeDescription schema = TypeDescription.createTimestamp();
+    Writer writer = OrcFile.createWriter(testFilePath,
+        OrcFile.writerOptions(conf).setSchema(schema).stripeSize(100000)
+            .bufferSize(10000).useUTCTimestamp(true));
+    VectorizedRowBatch batch = new VectorizedRowBatch(1, 1024);
+    TimestampColumnVector tcv = new TimestampColumnVector(1024);
+    batch.cols[0] = tcv;
+    batch.reset();
+    batch.size = 1;
+    tcv.time[0] = 74000L;
+    writer.addRowBatch(batch);
+    writer.close();
+
+    Reader reader = OrcFile.createReader(testFilePath,
+        OrcFile.readerOptions(conf).useUTCTimestamp(true).filesystem(fs));
+    TypeDescription schemaOnRead = TypeDescription.createString();
+    RecordReader rows = reader.rows(reader.options().schema(schemaOnRead));
+    batch = schemaOnRead.createRowBatch();
+    rows.nextBatch(batch);
+    String expected = "1970-01-01 00:01:14";
+    BytesColumnVector bytesColumnVector = (BytesColumnVector) batch.cols[0];
+    assertEquals(expected, bytesColumnVector.toString(0));
+    rows.close();
+  }
+
+  @Test
+  public void testStringToTimestampEvolution() throws Exception {
+    testFilePath = new Path(workDir, "TestOrcFile." +
+        testCaseName.getMethodName() + ".orc");
+    TypeDescription schema = TypeDescription.createString();
+    Writer writer = OrcFile.createWriter(testFilePath,
+        OrcFile.writerOptions(conf).setSchema(schema).stripeSize(100000)
+            .bufferSize(10000).useUTCTimestamp(true));
+    VectorizedRowBatch batch = new VectorizedRowBatch(1, 1024);
+    BytesColumnVector bcv = new BytesColumnVector(1024);
+    batch.cols[0] = bcv;
+    batch.reset();
+    batch.size = 1;
+    bcv.vector[0] = "1970-01-01 00:01:14".getBytes();
+    bcv.length[0] = "1970-01-01 00:01:14".getBytes().length;
+    writer.addRowBatch(batch);
+    writer.close();
+
+    Reader reader = OrcFile.createReader(testFilePath,
+        OrcFile.readerOptions(conf).filesystem(fs).useUTCTimestamp(true));
+    TypeDescription schemaOnRead = TypeDescription.createTimestamp();
+    RecordReader rows = reader.rows(reader.options().schema(schemaOnRead));
+    batch = schemaOnRead.createRowBatchV2();
+    rows.nextBatch(batch);
+    assertEquals(74000L, ((TimestampColumnVector) batch.cols[0]).time[0]);
+    assertEquals(0L, ((TimestampColumnVector) batch.cols[0]).nanos[0]);
+    rows.close();
+  }
+
+  @Test
   public void testSafePpdEvaluation() throws IOException {
     TypeDescription fileStruct1 = TypeDescription.createStruct()
         .addField("f1", TypeDescription.createInt())
