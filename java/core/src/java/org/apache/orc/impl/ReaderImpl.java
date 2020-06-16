@@ -65,6 +65,7 @@ public class ReaderImpl implements Reader {
   protected final Path path;
   protected final OrcFile.ReaderOptions options;
   protected final org.apache.orc.CompressionKind compressionKind;
+  protected FSDataInputStream file;
   protected int bufferSize;
   protected OrcProto.Metadata metadata;
   private List<OrcProto.StripeStatistics> stripeStats;
@@ -844,5 +845,23 @@ public class ReaderImpl implements Reader {
     }
     buffer.append(")");
     return buffer.toString();
+  }
+  @Override
+  public void close() throws IOException {
+    if (file != null) {
+      file.close();
+    }
+  }
+
+  /**
+   * Take the file from the reader.
+   * This allows the first RecordReader to use the same file, but additional
+   * RecordReaders will open new handles.
+   * @return a file handle, if one is available
+   */
+  FSDataInputStream takeFile() {
+    FSDataInputStream result = file;
+    file = null;
+    return result;
   }
 }
