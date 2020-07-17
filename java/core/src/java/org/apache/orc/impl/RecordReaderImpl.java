@@ -242,11 +242,11 @@ public class RecordReaderImpl implements RecordReader {
     if (options.getDataReader() != null) {
       this.dataReader = options.getDataReader().clone();
     } else {
-      CompressionKind unencryptedOptions = fileReader.getCompressionKind();
       DataReaderProperties.Builder builder =
           DataReaderProperties.builder()
-              .withCompression(unencryptedOptions)
-              .withFileSystemSupplier(fileReader.getFileSystemSupplier())
+              .withBufferSize(bufferSize)
+              .withCompression(fileReader.compressionKind)
+              .withFileSystem(fileReader.getFileSystem())
               .withPath(fileReader.path)
               .withTypeCount(types.size())
               .withMaxDiskRangeChunkLimit(maxDiskRangeChunkLimit)

@@ -23,11 +23,9 @@ import org.apache.hadoop.fs.Path;
 import org.apache.orc.CompressionKind;
 import org.apache.orc.OrcConf;
 
-import java.util.function.Supplier;
-
 public final class DataReaderProperties {
 
-  private final Supplier<FileSystem> fileSystemSupplier;
+  private final FileSystem fileSystem;
   private final Path path;
   private final FSDataInputStream file;
   private final CompressionKind compression;
@@ -37,7 +35,7 @@ public final class DataReaderProperties {
   private final int maxDiskRangeChunkLimit;
 
   private DataReaderProperties(Builder builder) {
-    this.fileSystemSupplier = builder.fileSystemSupplier;
+    this.fileSystem = builder.fileSystem;
     this.path = builder.path;
     this.file = builder.file;
     this.compression = builder.compression;
@@ -47,8 +45,8 @@ public final class DataReaderProperties {
     this.maxDiskRangeChunkLimit = builder.maxDiskRangeChunkLimit;
   }
 
-  public Supplier<FileSystem> getFileSystemSupplier() {
-    return fileSystemSupplier;
+  public FileSystem getFileSystem() {
+    return fileSystem;
   }
 
   public Path getPath() {
@@ -85,7 +83,7 @@ public final class DataReaderProperties {
 
   public static class Builder {
 
-    private Supplier<FileSystem> fileSystemSupplier;
+    private FileSystem fileSystem;
     private Path path;
     private FSDataInputStream file;
     private CompressionKind compression;
@@ -98,13 +96,8 @@ public final class DataReaderProperties {
 
     }
 
-    public Builder withFileSystemSupplier(Supplier<FileSystem> supplier) {
-      this.fileSystemSupplier = supplier;
-      return this;
-    }
-
-    public Builder withFileSystem(FileSystem filesystem) {
-      this.fileSystemSupplier = () -> filesystem;
+    public Builder withFileSystem(FileSystem fileSystem) {
+      this.fileSystem = fileSystem;
       return this;
     }
 
@@ -144,8 +137,8 @@ public final class DataReaderProperties {
     }
 
     public DataReaderProperties build() {
-      if (fileSystemSupplier == null || path == null) {
-        throw new NullPointerException("Filesystem = " + fileSystemSupplier +
+      if (fileSystem == null || path == null) {
+        throw new NullPointerException("Filesystem = " + fileSystem +
                                            ", path = " + path);
       }
 

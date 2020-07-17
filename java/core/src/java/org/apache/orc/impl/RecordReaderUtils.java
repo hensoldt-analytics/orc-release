@@ -26,8 +26,6 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.TreeMap;
-import java.util.function.Supplier;
-
 import org.apache.commons.lang.builder.HashCodeBuilder;
 import org.apache.hadoop.fs.FSDataInputStream;
 import org.apache.hadoop.fs.FileSystem;
@@ -149,7 +147,7 @@ public class RecordReaderUtils {
     private FSDataInputStream file;
     private ByteBufferAllocatorPool pool;
     private HadoopShims.ZeroCopyReaderShim zcr = null;
-    private final Supplier<FileSystem> fileSystemSupplier;
+    private final FileSystem fs;
     private final Path path;
     private final boolean useZeroCopy;
     private CompressionCodec codec;
@@ -160,7 +158,7 @@ public class RecordReaderUtils {
     private boolean isOpen = false;
 
     private DefaultDataReader(DataReaderProperties properties) {
-      this.fileSystemSupplier = properties.getFileSystemSupplier();
+      this.fs = properties.getFileSystem();
       this.path = properties.getPath();
       this.file = properties.getFile();
       this.useZeroCopy = properties.getZeroCopy();
@@ -173,7 +171,7 @@ public class RecordReaderUtils {
     @Override
     public void open() throws IOException {
       if (file == null) {
-        this.file = fileSystemSupplier.get().open(path);
+        this.file = fs.open(path);
       }
       if (useZeroCopy) {
         // ZCR only uses codec for boolean checks.
