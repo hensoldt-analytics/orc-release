@@ -30,8 +30,6 @@ import org.slf4j.LoggerFactory;
 import org.apache.hadoop.hive.common.io.DiskRange;
 
 import com.google.protobuf.CodedInputStream;
-import org.apache.orc.EncryptionAlgorithm;
-import java.security.Key;
 
 public abstract class InStream extends InputStream {
 
@@ -411,56 +409,6 @@ public abstract class InStream extends InputStream {
                   uncompressed.limit());
     }
   }
-
-  public static class StreamOptions implements Cloneable {
-  private CompressionCodec codec;
-  private int bufferSize;
-  private EncryptionAlgorithm algorithm;
-  private Key key;
-  private byte[] iv;
-
-  public StreamOptions withCodec(CompressionCodec value) {
-    this.codec = value;
-    return this;
-  }
-
-  public StreamOptions withBufferSize(int value) {
-    bufferSize = value;
-    return this;
-  }
-
-  public StreamOptions withEncryption(EncryptionAlgorithm algorithm,
-                                      Key key,
-                                      byte[] iv) {
-    this.algorithm = algorithm;
-    this.key = key;
-    this.iv = iv;
-    return this;
-  }
-
-  public CompressionCodec getCodec() {
-    return codec;
-  }
-
-  @Override
-  public StreamOptions clone() {
-    try {
-      StreamOptions clone = (StreamOptions) super.clone();
-      if (clone.codec != null) {
-        // Make sure we don't share the same codec between two readers.
-        clone.codec = OrcCodecPool.getCodec(codec.getKind());
-      }
-      return clone;
-    } catch (CloneNotSupportedException e) {
-      throw new UnsupportedOperationException("uncloneable", e);
-    }
-  }
-}
-
-public static StreamOptions options() {
-  return new StreamOptions();
-}
-
 
   public abstract void seek(PositionProvider index) throws IOException;
 
