@@ -30,7 +30,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.TimeZone;
 
-import org.apache.hadoop.fs.FSDataInputStream;
 import org.apache.orc.OrcFile;
 import org.apache.orc.util.BloomFilter;
 import org.apache.orc.util.BloomFilterIO;
@@ -100,7 +99,6 @@ public class RecordReaderImpl implements RecordReader {
   private final DataReader dataReader;
   private final boolean ignoreNonUtf8BloomFilter;
   private final OrcFile.WriterVersion writerVersion;
-  private final int maxDiskRangeChunkLimit;
 
   /**
    * Given a list of column names, find the given column and return the index.
@@ -234,7 +232,6 @@ public class RecordReaderImpl implements RecordReader {
       }
     }
 
-    this.maxDiskRangeChunkLimit = OrcConf.ORC_MAX_DISK_RANGE_CHUNK_LIMIT.getInt(fileReader.conf);
     Boolean zeroCopy = options.getUseZeroCopy();
     if (zeroCopy == null) {
       zeroCopy = OrcConf.USE_ZEROCOPY.getBoolean(fileReader.conf);
@@ -242,21 +239,15 @@ public class RecordReaderImpl implements RecordReader {
     if (options.getDataReader() != null) {
       this.dataReader = options.getDataReader().clone();
     } else {
-      DataReaderProperties.Builder builder =
+      this.dataReader = RecordReaderUtils.createDefaultDataReader(
           DataReaderProperties.builder()
               .withBufferSize(bufferSize)
               .withCompression(fileReader.compressionKind)
               .withFileSystemSupplier(fileReader.getFileSystemSupplier())
               .withPath(fileReader.path)
               .withTypeCount(types.size())
-              .withMaxDiskRangeChunkLimit(maxDiskRangeChunkLimit)
-              .withZeroCopy(zeroCopy);
-      FSDataInputStream file = fileReader.takeFile();
-      if (file != null) {
-        builder.withFile(file);
-      }
-      this.dataReader = RecordReaderUtils.createDefaultDataReader(
-          builder.build());
+              .withZeroCopy(zeroCopy)
+              .build());
     }
     this.dataReader.open();
     firstRow = skippedRows;
@@ -1452,10 +1443,6 @@ public class RecordReaderImpl implements RecordReader {
       result[i] = lastRoot.getSubtypes(index);
     }
     return result;
-  }
-
-  public int getMaxDiskRangeChunkLimit() {
-    return maxDiskRangeChunkLimit;
   }
 
   public CompressionCodec getCompressionCodec() {
