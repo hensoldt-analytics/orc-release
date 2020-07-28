@@ -1485,16 +1485,17 @@ public class WriterImpl implements Writer, MemoryManager.Callback {
    * Under the covers, char is written to ORC the same way as string.
    */
   private static class CharTreeWriter extends StringBaseTreeWriter {
-    private final int itemLength;
+    private final int maxLength;
     private final byte[] padding;
 
     CharTreeWriter(int columnId,
-        TypeDescription schema,
-        StreamFactory writer,
-        boolean nullable) throws IOException {
+                   TypeDescription schema,
+                   StreamFactory writer,
+                   boolean nullable) throws IOException {
       super(columnId, schema, writer, nullable);
-      itemLength = schema.getMaxLength();
-      padding = new byte[itemLength];
+      maxLength = schema.getMaxLength();
+      // utf-8 is currently 4 bytes long, but it could be upto 6
+      padding = new byte[6 * maxLength];
     }
 
     @Override
@@ -1504,74 +1505,57 @@ public class WriterImpl implements Writer, MemoryManager.Callback {
       BytesColumnVector vec = (BytesColumnVector) vector;
       if (vector.isRepeating) {
         if (vector.noNulls || !vector.isNull[0]) {
-          byte[] ptr;
-          int ptrOffset;
-          if (vec.length[0] >= itemLength) {
-            ptr = vec.vector[0];
-            ptrOffset = vec.start[0];
-          } else {
-            ptr = padding;
-            ptrOffset = 0;
-            System.arraycopy(vec.vector[0], vec.start[0], ptr, 0,
-                vec.length[0]);
-            Arrays.fill(ptr, vec.length[0], itemLength, (byte) ' ');
-          }
-          if (useDictionaryEncoding) {
-            int id = dictionary.add(ptr, ptrOffset, itemLength);
-            for(int i=0; i < length; ++i) {
-              rows.add(id);
-            }
-          } else {
-            for(int i=0; i < length; ++i) {
-              directStreamOutput.write(ptr, ptrOffset, itemLength);
-              lengthOutput.write(itemLength);
-            }
-          }
-          indexStatistics.updateString(ptr, ptrOffset, itemLength, length);
-          if (createBloomFilter) {
-            if (bloomFilter != null) {
-              // translate from UTF-8 to the default charset
-              bloomFilter.addString(new String(vec.vector[0], vec.start[0],
-                  vec.length[0], StandardCharsets.UTF_8));
-            }
-            bloomFilterUtf8.addBytes(vec.vector[0], vec.start[0], vec.length[0]);
-          }
+          // 0, length times
+          writePadded(vec, 0, length);
         }
       } else {
-        for(int i=0; i < length; ++i) {
+        for (int i = 0; i < length; ++i) {
           if (vec.noNulls || !vec.isNull[i + offset]) {
-            byte[] ptr;
-            int ptrOffset;
-            if (vec.length[offset + i] >= itemLength) {
-              ptr = vec.vector[offset + i];
-              ptrOffset = vec.start[offset + i];
-            } else {
-              // it is the wrong length, so copy it
-              ptr = padding;
-              ptrOffset = 0;
-              System.arraycopy(vec.vector[offset + i], vec.start[offset + i],
-                  ptr, 0, vec.length[offset + i]);
-              Arrays.fill(ptr, vec.length[offset + i], itemLength, (byte) ' ');
-            }
-            if (useDictionaryEncoding) {
-              rows.add(dictionary.add(ptr, ptrOffset, itemLength));
-            } else {
-              directStreamOutput.write(ptr, ptrOffset, itemLength);
-              lengthOutput.write(itemLength);
-            }
-            indexStatistics.updateString(ptr, ptrOffset, itemLength, 1);
-            if (createBloomFilter) {
-              if (bloomFilter != null) {
-                // translate from UTF-8 to the default charset
-                bloomFilter.addString(new String(vec.vector[offset + i],
-                    vec.start[offset + i], vec.length[offset + i],
-                    StandardCharsets.UTF_8));
-              }
-              bloomFilterUtf8.addBytes(vec.vector[offset + i],
-                  vec.start[offset + i], vec.length[offset + i]);
-            }
+            // offset + i, once per loop
+            writePadded(vec, i + offset, 1);
           }
         }
+      }
+    }
+
+
+    private void writePadded(BytesColumnVector vec, int row, int repeats) throws IOException {
+      final byte[] ptr;
+      final int ptrOffset;
+      final int ptrLength;
+      int charLength = Utf8Utils.charLength(vec.vector[row], vec.start[row], vec.length[row]);
+      if (charLength >= maxLength) {
+        ptr = vec.vector[row];
+        ptrOffset = vec.start[row];
+        ptrLength =
+                Utf8Utils
+                        .truncateBytesTo(maxLength, vec.vector[row], vec.start[row], vec.length[row]);
+      } else {
+        ptr = padding;
+        // the padding is exactly 1 byte per char
+        ptrLength = vec.length[row] + (maxLength - charLength);
+        ptrOffset = 0;
+        System.arraycopy(vec.vector[row], vec.start[row], ptr, 0, vec.length[row]);
+        Arrays.fill(ptr, vec.length[row], ptrLength, (byte) ' ');
+      }
+      if (useDictionaryEncoding) {
+        int id = dictionary.add(ptr, ptrOffset, ptrLength);
+        for (int i = 0; i < repeats; ++i) {
+          rows.add(id);
+        }
+      } else {
+        for (int i = 0; i < repeats; ++i) {
+          directStreamOutput.write(ptr, ptrOffset, ptrLength);
+          lengthOutput.write(ptrLength);
+        }
+      }
+      indexStatistics.updateString(ptr, ptrOffset, ptrLength, repeats);
+      if (createBloomFilter) {
+        if (bloomFilter != null) {
+          // translate from UTF-8 to the default charset
+          bloomFilter.addString(new String(ptr, ptrOffset, ptrLength, StandardCharsets.UTF_8));
+        }
+        bloomFilterUtf8.addBytes(ptr, ptrOffset, ptrLength);
       }
     }
   }
@@ -1597,58 +1581,42 @@ public class WriterImpl implements Writer, MemoryManager.Callback {
       BytesColumnVector vec = (BytesColumnVector) vector;
       if (vector.isRepeating) {
         if (vector.noNulls || !vector.isNull[0]) {
-          int itemLength = Math.min(vec.length[0], maxLength);
-          if (useDictionaryEncoding) {
-            int id = dictionary.add(vec.vector[0], vec.start[0], itemLength);
-            for(int i=0; i < length; ++i) {
-              rows.add(id);
-            }
-          } else {
-            for(int i=0; i < length; ++i) {
-              directStreamOutput.write(vec.vector[0], vec.start[0],
-                  itemLength);
-              lengthOutput.write(itemLength);
-            }
-          }
-          indexStatistics.updateString(vec.vector[0], vec.start[0],
-              itemLength, length);
-          if (createBloomFilter) {
-            if (bloomFilter != null) {
-              // translate from UTF-8 to the default charset
-              bloomFilter.addString(new String(vec.vector[0],
-                  vec.start[0], itemLength,
-                  StandardCharsets.UTF_8));
-            }
-            bloomFilterUtf8.addBytes(vec.vector[0],
-                vec.start[0], itemLength);
-          }
+          // 0, length times
+          writeTruncated(vec, 0, length);
         }
       } else {
         for(int i=0; i < length; ++i) {
           if (vec.noNulls || !vec.isNull[i + offset]) {
-            int itemLength = Math.min(vec.length[offset + i], maxLength);
-            if (useDictionaryEncoding) {
-              rows.add(dictionary.add(vec.vector[offset + i],
-                  vec.start[offset + i], itemLength));
-            } else {
-              directStreamOutput.write(vec.vector[offset + i],
-                  vec.start[offset + i], itemLength);
-              lengthOutput.write(itemLength);
-            }
-            indexStatistics.updateString(vec.vector[offset + i],
-                vec.start[offset + i], itemLength, 1);
-            if (createBloomFilter) {
-              if (bloomFilter != null) {
-                // translate from UTF-8 to the default charset
-                bloomFilter.addString(new String(vec.vector[offset + i],
-                    vec.start[offset + i], itemLength,
-                    StandardCharsets.UTF_8));
-              }
-              bloomFilterUtf8.addBytes(vec.vector[offset + i],
-                  vec.start[offset + i], itemLength);
-            }
+            // offset + i, once per loop
+            writeTruncated(vec, i + offset, 1);
           }
         }
+      }
+    }
+
+    private void writeTruncated(BytesColumnVector vec, int row, int repeats)
+            throws IOException {
+      int itemLength =
+              Utf8Utils.truncateBytesTo(maxLength, vec.vector[row], vec.start[row], vec.length[row]);
+      if (useDictionaryEncoding) {
+        int id = dictionary.add(vec.vector[row], vec.start[row], itemLength);
+        for (int i = 0; i < repeats; ++i) {
+          rows.add(id);
+        }
+      } else {
+        for (int i = 0; i < repeats; ++i) {
+          directStreamOutput.write(vec.vector[row], vec.start[row], itemLength);
+          lengthOutput.write(itemLength);
+        }
+      }
+      indexStatistics.updateString(vec.vector[row], vec.start[row], itemLength, repeats);
+      if (createBloomFilter) {
+        if (bloomFilter != null) {
+          // translate from UTF-8 to the default charset
+          bloomFilter.addString(new String(vec.vector[row], vec.start[row], itemLength,
+                  StandardCharsets.UTF_8));
+        }
+        bloomFilterUtf8.addBytes(vec.vector[row], vec.start[row], itemLength);
       }
     }
   }
