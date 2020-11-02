@@ -160,7 +160,7 @@ public class WriterImpl implements WriterInternal, MemoryManager.Callback {
       OutStream.assertBufferSizeValid(opts.getBufferSize());
       this.bufferSize = opts.getBufferSize();
     } else {
-      this.bufferSize = getEstimatedBufferSize(adjustedStripeSize,
+      this.bufferSize = getEstimatedBufferSize(stripeSize,
           numColumns, opts.getBufferSize());
     }
     if (version == OrcFile.Version.FUTURE) {
